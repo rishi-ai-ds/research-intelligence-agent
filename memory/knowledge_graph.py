@@ -159,6 +159,66 @@ class KnowledgeGraphClient:
             }
 
 
+    def get_visual_graph(self, limit: int = 120) -> dict:
+        """Returns nodes and directed edges for interactive UI graph rendering."""
+        driver = self._get_driver()
+        if not driver:
+            return {"status": "offline", "nodes": [], "edges": []}
+
+        cypher = """
+        MATCH (p:Paper)
+        OPTIONAL MATCH (p)-[r1:USES_METHOD]->(m:Method)
+        OPTIONAL MATCH (p)-[r2:EVALUATED_ON]->(d:Dataset)
+        RETURN p.paper_id AS paper_id,
+               p.title AS title,
+               p.source AS source,
+               collect(DISTINCT m.name) AS methods,
+               collect(DISTINCT d.name) AS datasets
+        LIMIT $limit
+        """
+        nodes_map = {}
+        edges = []
+        with driver.session() as session:
+            for rec in session.run(cypher, limit=limit):
+                pid = f"paper:{rec['paper_id']}"
+                full_title = rec["title"] or rec["paper_id"]
+                short_label = full_title[:28] + "..." if len(full_title) > 28 else full_title
+                nodes_map[pid] = {
+                    "id": pid,
+                    "label": short_label,
+                    "title": f"Paper: {full_title} ({rec['source'] or 'unknown'})",
+                    "group": "Paper",
+                }
+                for m in rec["methods"]:
+                    if not m:
+                        continue
+                    mid = f"method:{m}"
+                    nodes_map[mid] = {
+                        "id": mid,
+                        "label": m,
+                        "title": f"Method: {m}",
+                        "group": "Method",
+                    }
+                    edges.append({"from": pid, "to": mid, "label": "USES_METHOD"})
+                for d in rec["datasets"]:
+                    if not d:
+                        continue
+                    did = f"dataset:{d}"
+                    nodes_map[did] = {
+                        "id": did,
+                        "label": d,
+                        "title": f"Dataset: {d}",
+                        "group": "Dataset",
+                    }
+                    edges.append({"from": pid, "to": did, "label": "EVALUATED_ON"})
+
+        return {
+            "status": "connected",
+            "nodes": list(nodes_map.values()),
+            "edges": edges,
+        }
+
+
 kg_client = KnowledgeGraphClient()
 
 

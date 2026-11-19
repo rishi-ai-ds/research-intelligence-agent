@@ -117,3 +117,8 @@ async def upload_pdf(file: UploadFile = File(...)):
         "pages": doc_dict["page_count"],
         "chunks_indexed": chunks_added,
     }
+
+
+@app.get("/graph")
+def get_knowledge_graph(limit: int = 120):
+    return kg_client.get_visual_graph(limit=limit)
