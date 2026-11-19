@@ -1,7 +1,7 @@
-﻿from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient
 from agent.edges import route_after_evaluation
 from models.schemas import ResearchPlan, Subtask, PaperInsight
-from memory.vector_store import faiss_rag_search
+from memory.vector_store import faiss_rag_search, index_papers
 from api.main import app
 
 
@@ -35,6 +35,15 @@ def test_pydantic_schemas_validation():
 
 
 def test_faiss_retrieval_returns_scored_results():
+    index_papers([
+        {
+            "paper_id": "test-ci-001",
+            "title": "Graph Neural Networks for Fake News Detection",
+            "abstract": "We evaluate deep learning and transformer architectures on benchmark fake news datasets.",
+            "source": "arxiv",
+            "url": "https://arxiv.org/abs/0000.00001",
+        }
+    ])
     hits = faiss_rag_search.invoke({"query": "fake news detection machine learning", "top_k": 2})
     assert isinstance(hits, list)
     assert len(hits) >= 1
