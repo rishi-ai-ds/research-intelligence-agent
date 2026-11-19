@@ -3,6 +3,7 @@ from models.schemas import ResearchPlan, PaperInsight, EvaluationResult
 from tools.llm_client import generate_structured, generate_text
 from tools.paper_search import arxiv_search, pubmed_search
 from memory.vector_store import faiss_rag_search, index_papers
+from memory.knowledge_graph import neo4j_kg_search, kg_client
 
 
 def planner_node(state: AgentState) -> dict:
@@ -33,7 +34,7 @@ def planner_node(state: AgentState) -> dict:
 
 
 def research_node(state: AgentState) -> dict:
-    """Hybrid RAG retrieval: searches local FAISS first, falls back to arXiv/PubMed, and caches new papers."""
+    """Hybrid Graph-RAG: queries Neo4j KG + local FAISS first, falls back to arXiv/PubMed, and caches into both."""
     iteration = state.get("iteration", 0) + 1
     idx = state.get("current_subtask_idx", 0)
     plan = state.get("plan", [])
@@ -50,18 +51,22 @@ def research_node(state: AgentState) -> dict:
         query = state.get("evaluation_feedback") or state["objective"]
         external_tool = "arxiv_search"
 
-    # Step 1: Query local FAISS index first
-    local_hits = faiss_rag_search.invoke({"query": query, "top_k": 4})
-    strong_local = [
-        h for h in local_hits
+    # Step 1: Check Neo4j Knowledge Graph (if running) + Local FAISS Vector Store
+    kg_hits = [
+        h for h in neo4j_kg_search.invoke({"entity_query": query, "limit": 2})
+        if h["paper_id"] not in seen_ids
+    ]
+    local_hits = [
+        h for h in faiss_rag_search.invoke({"query": query, "top_k": 4})
         if h.get("relevance_score", 0) >= 0.58 and h["paper_id"] not in seen_ids
     ]
 
+    combined_local = kg_hits + [h for h in local_hits if h["paper_id"] not in {k["paper_id"] for k in kg_hits}]
     candidate_papers = []
-    source_used = "faiss_rag"
+    source_used = "neo4j+faiss" if kg_hits else "faiss_rag"
 
-    if len(strong_local) >= 2:
-        candidate_papers = strong_local[:2]
+    if len(combined_local) >= 2:
+        candidate_papers = combined_local[:2]
     else:
         # Step 2: Fetch fresh literature from arXiv or PubMed and cache into FAISS
         source_used = external_tool
@@ -75,10 +80,9 @@ def research_node(state: AgentState) -> dict:
             if "error" not in p and p["paper_id"] not in seen_ids
         ]
         if valid_external:
-            index_papers(valid_external)  # Auto-expand local FAISS knowledge base
+            index_papers(valid_external)
 
-        # Combine any strong local hit with fresh external hits
-        candidate_papers = (strong_local + valid_external)[:2]
+        candidate_papers = (combined_local + valid_external)[:2]
 
     new_evidence = []
     citation_counter = len(existing_evidence) + 1
@@ -94,6 +98,17 @@ def research_node(state: AgentState) -> dict:
             user_prompt=f"Title: {paper['title']}\nText: {paper['abstract']}",
             prefer_fast=True,
         )
+
+        # Auto-populate Neo4j Knowledge Graph if online
+        kg_client.upsert_paper_triples(
+            paper_id=paper["paper_id"],
+            title=paper["title"],
+            source=paper.get("source", "faiss"),
+            methods=insight.methods,
+            datasets=insight.datasets,
+            url=paper.get("url", ""),
+        )
+
         new_evidence.append(
             {
                 "citation_id": f"[C{citation_counter}]",
