@@ -1,4 +1,4 @@
-﻿import time
+import time
 import logging
 from neo4j import GraphDatabase
 from langchain_core.tools import tool
@@ -70,16 +70,16 @@ class KnowledgeGraphClient:
         clean_datasets = [d.strip() for d in datasets if d and d.strip()]
 
         cypher = """
-        MERGE (p:Paper {paper_id: })
-        SET p.title = , p.source = , p.url = 
+        MERGE (p:Paper {paper_id: $paper_id})
+        SET p.title = $title, p.source = $source, p.url = $url
         WITH p
-        UNWIND CASE WHEN size() = 0 THEN [null] ELSE  END AS m_name
+        UNWIND CASE WHEN size($methods) = 0 THEN [null] ELSE $methods END AS m_name
         FOREACH (_ IN CASE WHEN m_name IS NOT NULL THEN [1] ELSE [] END |
             MERGE (m:Method {name: m_name})
             MERGE (p)-[:USES_METHOD]->(m)
         )
         WITH p
-        UNWIND CASE WHEN size() = 0 THEN [null] ELSE  END AS d_name
+        UNWIND CASE WHEN size($datasets) = 0 THEN [null] ELSE $datasets END AS d_name
         FOREACH (_ IN CASE WHEN d_name IS NOT NULL THEN [1] ELSE [] END |
             MERGE (d:Dataset {name: d_name})
             MERGE (p)-[:EVALUATED_ON]->(d)
@@ -108,15 +108,15 @@ class KnowledgeGraphClient:
         OPTIONAL MATCH (p)-[:USES_METHOD]->(m:Method)
         OPTIONAL MATCH (p)-[:EVALUATED_ON]->(d:Dataset)
         WITH p, collect(DISTINCT m.name) AS methods, collect(DISTINCT d.name) AS datasets
-        WHERE toLower(p.title) CONTAINS toLower()
-           OR any(x IN methods WHERE toLower(x) CONTAINS toLower())
-           OR any(y IN datasets WHERE toLower(y) CONTAINS toLower())
+        WHERE toLower(p.title) CONTAINS toLower($kw)
+           OR any(x IN methods WHERE toLower(x) CONTAINS toLower($kw))
+           OR any(y IN datasets WHERE toLower(y) CONTAINS toLower($kw))
         RETURN p.paper_id AS paper_id,
                p.title AS title,
                p.url AS url,
                methods,
                datasets
-        LIMIT 
+        LIMIT $limit
         """
         with driver.session() as session:
             records = session.run(cypher, kw=keyword, limit=limit)
@@ -130,7 +130,7 @@ class KnowledgeGraphClient:
                         "title": rec["title"],
                         "url": rec["url"] or "",
                         "source": "neo4j",
-                        "abstract": f"Knowledge Graph links — Methods: [{methods_str}] | Datasets: [{datasets_str}]",
+                        "abstract": f"Knowledge Graph links ? Methods: [{methods_str}] | Datasets: [{datasets_str}]",
                         "methods": rec["methods"],
                         "datasets": rec["datasets"],
                         "relevance_score": 0.85,
