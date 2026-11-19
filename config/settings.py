@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Model Configuration (Cost-effective free/low-cost defaults)
     gemini_model: str = "gemini-2.5-flash"
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-20b"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # Agent Loop Guardrails
