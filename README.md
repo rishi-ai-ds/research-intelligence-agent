@@ -47,6 +47,7 @@ An autonomous **Graph-RAG Literature Synthesis & Research Intelligence Agent** b
 +-----------------+          +-------------------+         +------------------+
 
 
+
 Key Features
 Cyclic Agentic Workflow (LangGraph): Iterative Plan -> Retrieve -> Evaluate -> Synthesize loop with SQLite state checkpointing (memory/checkpointer.py) and configurable loop limits.
 
@@ -76,3 +77,27 @@ research-intelligence-agent/
 |-- app.py                  # Streamlit frontend with interactive Neo4j graph explorer
 |-- Dockerfile              # Container build definition
 `-- requirements.txt        # Python dependencies
+Quickstart
+1. Clone & Install
+Bash
+git clone [https://github.com/rishi-ai-ds/research-intelligence-agent.git](https://github.com/rishi-ai-ds/research-intelligence-agent.git)
+cd research-intelligence-agent
+python -m venv .venv
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+2. Configure .env
+Code snippet
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+LLM_PROVIDER=groq
+NEO4J_URI=bolt://127.0.0.1:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_neo4j_password
+3. Run Backend & UI
+Bash
+# Terminal 1: FastAPI backend
+uvicorn api.main:app --reload
+
+# Terminal 2: Streamlit frontend
+streamlit run app.py
