@@ -1,4 +1,4 @@
-﻿import time
+import time
 import logging
 from typing import Type, TypeVar
 from pydantic import BaseModel
@@ -47,7 +47,7 @@ def get_gemini_llm(temperature: float = 0.2) -> ChatGoogleGenerativeAI:
         google_api_key=settings.gemini_api_key,
         temperature=temperature,
         timeout=settings.llm_timeout_seconds,
-        max_retries=1,
+        max_retries=0,
     )
 
 
@@ -61,7 +61,7 @@ def get_groq_llm(temperature: float = 0.0) -> ChatGroq:
     )
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=4), reraise=True)
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3), reraise=True)
 def _call_text(llm, messages: list) -> str:
     start = time.perf_counter()
     resp = llm.invoke(messages)
@@ -71,8 +71,17 @@ def _call_text(llm, messages: list) -> str:
 
 
 def generate_text(system_prompt: str, user_prompt: str, temperature: float = 0.2) -> str:
-    """Generates text using Gemini with automatic fallback to Groq."""
+    """Generates text respecting settings.llm_provider with automatic cross-provider fallback."""
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+    mode = settings.llm_provider.lower().strip()
+
+    if mode == "groq":
+        try:
+            return _call_text(get_groq_llm(temperature=temperature), messages)
+        except Exception as groq_err:
+            logger.warning(f"Groq generate_text failed ({groq_err}); falling back to Gemini.")
+            return _call_text(get_gemini_llm(temperature=temperature), messages)
+
     try:
         return _call_text(get_gemini_llm(temperature=temperature), messages)
     except Exception as gemini_err:
@@ -86,11 +95,19 @@ def generate_structured(
     user_prompt: str,
     prefer_fast: bool = False,
 ) -> T:
-    """Generates a validated Pydantic object using structured tool/JSON output with fallback."""
+    """Generates a validated Pydantic object respecting settings.llm_provider with fallback."""
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+    mode = settings.llm_provider.lower().strip()
 
-    primary = get_groq_llm(temperature=0.0) if prefer_fast else get_gemini_llm(temperature=0.1)
-    backup = get_gemini_llm(temperature=0.1) if prefer_fast else get_groq_llm(temperature=0.0)
+    if mode == "groq":
+        primary = get_groq_llm(temperature=0.0)
+        backup = get_gemini_llm(temperature=0.1)
+    elif mode == "gemini":
+        primary = get_gemini_llm(temperature=0.1)
+        backup = get_groq_llm(temperature=0.0)
+    else:
+        primary = get_groq_llm(temperature=0.0) if prefer_fast else get_gemini_llm(temperature=0.1)
+        backup = get_gemini_llm(temperature=0.1) if prefer_fast else get_groq_llm(temperature=0.0)
 
     try:
         start = time.perf_counter()

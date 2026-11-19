@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "neo4j123"
 
+    # Provider Mode: "auto" (hybrid), "groq" (Groq only), or "gemini" (Gemini primary)
+    llm_provider: str = "groq"
+
     # Model Configuration (Cost-effective free/low-cost defaults)
     gemini_model: str = "gemini-2.5-flash"
     groq_model: str = "openai/gpt-oss-20b"
